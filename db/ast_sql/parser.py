@@ -245,7 +245,6 @@ class Executor:
         # אם ביקשו * — מחזירים הכל בלי שינוי
         if columns == ["*"]:
             return records
-
         # אחרת — בונים dict חדש עם רק העמודות המבוקשות
         filtered = []
         for record in records:
@@ -257,7 +256,6 @@ class Executor:
                     # העמודה לא קיימת ברשומה
                     filtered_record[col] = f"<unknown column: {col}>"
             filtered.append(filtered_record)
-        print ("fil", filtered)
         return filtered
     def _execute_select(self, ast: dict) -> str:
         """
@@ -267,46 +265,46 @@ class Executor:
           3. WHERE other_col op X → full scan + filter in Python
         """
         where = ast["where"]  # either None or a tuple (column, op, value)
-
+        columns = ast["columns"]
         # Case 1 — no WHERE, return everything
         if where is None:
             results = self.table.select_all()
-            return self._format(results)
+            filresults = self._apply_columns(results, columns)
+            return self._format(filresults)
         column, op, value = where
         if column == "id" and op == "=":
-            columns = []
-            columns.append(column)
             results = self.table.select_by_id(value)
             if results is None:
                 return "No record found."
-            filresults = self._apply_columns(results, columns)
-            print("sadasdada:   ", filresults)
+            filresults = self._apply_columns([results], columns)
+            print("the string", filresults)
             return self._format(filresults)
         all_records = self.table.select_all()
-        filtered = self._apply_filter(op, all_records, column, value)
-        print("DEBUG - Filtered records:", results)
+        
+        filtered = self._apply_filter(op,all_records , column, value)
+        filtered_results = self._apply_columns(filtered, columns)
             # שלב 2 — סנן עמודות
-        filtered_results = self._apply_columns(filtered, column)
+        
         return self._format(filtered_results)
-    def _format(self, records: list) -> str:
-        """
+    """def _format(self, records: list) -> str:
+        "
         Turn a list of record dicts into a human-readable string.
         
         Output example:
           {'id': 1, 'name': 'Alice', 'age': 30}
           {'id': 2, 'name': 'Bob', 'age': 28}
           (2 rows)
-        """
+        "
         if not records:
             return "No records found."
 
         lines = [str(r) for r in records]
         count = len(records)
         lines.append(f"({count} row{'s' if count != 1 else ''})")
-        return "\\n".join(lines)
-    """def _format(self, records: list) -> str:
+        return "\\n".join(lines)"""
+    def _format(self, records: list) -> str:
 
-        return records"""
+        return records
     def _apply_filter(self,op, records:list, column:str, value):
         """
         Pure Python filtering for columns without an index.
