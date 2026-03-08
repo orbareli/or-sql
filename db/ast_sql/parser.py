@@ -1,5 +1,6 @@
 from ast_sql.lexer import TokenType, Lexer
 from table import Table
+from aisql import AITranslator
 class Parser:
     def __init__(self, tokens):
         self.tokens = tokens
@@ -145,7 +146,7 @@ class Executor:
     #  Entry point                                                       #
     # ---------------------------------------------------------------- #
 
-    def run(self, sql: str):
+    def run(self, sql: str, ai: AITranslator):
         """
         The only method the CLI calls.
         
@@ -157,9 +158,20 @@ class Executor:
             tokens = lexer.tokenizer()
             ast = Parser(tokens).parse()
         except ParseError as e:
-            return f"Parse error: {e}"
+            error_msg = f"Parse error: {e}"
+            print("ai", ai)
+            if ai:
+                explanation = ai.explain_error(sql, str(e))
+                return f"{error_msg}\\n\\nAI: {explanation}"
+            return error_msg
+            #return f"Parse error: {e}"
         except Exception as e:
-            return f"Unexpected error during parsing: {e}"
+            error_msg = f"Parse error: {e}"
+            if ai:
+                explanation = ai.explain_error(sql, str(e))
+                return f"{error_msg}\\n\\nAI: {explanation}"
+            return error_msg
+            #return f"Unexpected error during parsing: {e}"
 
         handlers = {
             "SELECT": self._execute_select,
@@ -174,7 +186,12 @@ class Executor:
         try:
             return handler(ast)
         except Exception as e:
-            return f"Execution error: {e}"
+            error_msg = f"Execution error: {e}"
+        if ai:
+            explanation = ai.explain_error(sql, str(e))
+            return f"{error_msg}\\n\\nAI: {explanation}"
+        return error_msg
+    #return f"Execution error: {e}"
     def _execute_delete(self, ast):
         print(f"DEBUG ast: {ast}")          # בדוק שה-AST נכון
         

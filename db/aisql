@@ -1,0 +1,98 @@
+"""
+ai_translator.py
+----------------
+Translates natural language to SQL using HuggingFace Inference API.
+Uses Mistral-7B-Instruct — free, no local GPU needed.
+
+The model receives a prompt describing your DB schema and the user's
+question, and returns a SQL query.
+"""
+
+from huggingface_hub import InferenceClient
+
+
+# Your table schema — tell the model exactly what exists
+SCHEMA = """
+You are a SQL expert. You help users query a database.
+
+The database has ONE table called "users" with these columns:
+  - id   (integer, primary key, auto-increment)
+  - name (text, max 20 characters)
+  - age  (integer)
+
+Supported SQL:
+  SELECT * FROM users
+  SELECT * FROM users WHERE id = <number>
+  SELECT * FROM users WHERE age > <number>
+  SELECT * FROM users WHERE age < <number>
+  SELECT name FROM users
+  SELECT name, age FROM users
+  INSERT INTO users (name, age) VALUES ("<name>", <age>)
+  DELETE FROM users WHERE id = <number>
+
+Rules:
+  - Return ONLY the SQL query, nothing else
+  - No explanations, no markdown, no backticks
+  - Always use lowercase for SQL keywords
+  - If you cannot translate the request, return: UNKNOWN
+"""
+
+
+class AITranslator:
+    def __init__(self, hf_token: str):
+        self.client = InferenceClient(
+            model="mistralai/Mistral-7B-Instruct-v0.2",
+            token=hf_token,
+        )
+
+    def translate(self, natural_language: str) -> str | None:
+        """
+        Takes a natural language string.
+        Returns a SQL string, or None if translation failed.
+        """
+        prompt = f"{SCHEMA}\\n\\nUser request: {natural_language}\\nSQL:"
+
+        try:
+            response = self.client.text_generation(
+                prompt,
+                max_new_tokens=100,
+                temperature=0.1,      # low temperature = more deterministic
+                stop_sequences=["\\n", ";"],  # stop after one line
+            )
+
+            sql = response.strip()
+
+            if not sql or sql.upper() == "UNKNOWN":
+                return None
+
+            # Clean up in case model added extra stuff
+            sql = sql.strip("`").strip()
+            return sql
+
+        except Exception as e:
+            print(f"AI error: {e}")
+            return None
+
+
+# ------------------------------------------------------------------ #
+#  Quick test                                                          #
+# ------------------------------------------------------------------ #
+if __name__ == "__main__":
+    import os
+    token = os.environ.get("HF_TOKEN", "your_token_here")
+    ai = AITranslator(token)
+
+    tests = [
+        "show me all users",
+        "find user with id 3",
+        "add a user named Bob who is 25 years old",
+        "delete user number 5",
+        "who is older than 30",
+        "show me just the names",
+    ]
+
+    for t in tests:
+        sql = ai.translate(t)
+        print(f"Input:  {t}")
+        print(f"SQL:    {sql}")
+        print()
