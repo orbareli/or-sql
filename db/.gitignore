@@ -1,0 +1,14 @@
+# Secrets
+.env
+
+# Database files
+*.db
+*.idx
+*.meta
+
+# Python cache
+__pycache__/
+*.pyc
+
+# VS Code
+.vscode/
