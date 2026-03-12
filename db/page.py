@@ -11,8 +11,7 @@ PAGE_SIZE     = 4096
 HEADER_FORMAT = "!HH"
 HEADER_SIZE   = struct.calcsize(HEADER_FORMAT)  # 4 bytes
 DELETED_MARKER = bytes([0xFF, 0xFF, 0xFF, 0xFF])
-from page import DELETED_MARKER
-print(len(DELETED_MARKER))   # must print 4
+
 class Page:
     def __init__(self, data: bytearray = None):
         if data:
