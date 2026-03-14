@@ -1,6 +1,7 @@
 from ast_sql.lexer import TokenType, Lexer
 from table import Table
 from aisql import AITranslator
+from query_cache import QueryCache
 class Parser:
     def __init__(self, tokens):
         self.tokens = tokens
@@ -142,6 +143,7 @@ This is the only file that knows about both the SQL layer and the storage layer.
 class Executor:
     def __init__(self, table: Table):
         self.table = table
+        self.cache = QueryCache(max_size=100, ttl_seconds=60)
     # ---------------------------------------------------------------- #
     #  Entry point                                                       #
     # ---------------------------------------------------------------- #
@@ -184,15 +186,15 @@ class Executor:
             return f"Unsupported statement: {ast['action']}"
 
         try:
-            return handler(ast)
+            return handler(ast,sql)
         except Exception as e:
             error_msg = f"Execution error: {e}"
-        if ai:
-            explanation = ai.explain_error(sql, str(e))
-            return f"{error_msg}\\n\\nAI: {explanation}"
-        return error_msg
-    #return f"Execution error: {e}"
-    def _execute_delete(self, ast):
+            if ai:
+                explanation = ai.explain_error(sql, str(e))
+                return f"{error_msg}\\n\\nAI: {explanation}"
+        #return error_msg
+        return f"Execution error: {e}"
+    def _execute_delete(self, ast,sql):
         print(f"DEBUG ast: {ast}")          # בדוק שה-AST נכון
         
         where = ast["where"]
@@ -217,6 +219,7 @@ class Executor:
                 print(f"DEBUG delete crashed: {type(e).__name__}: {e}")
                 import traceback
                 traceback.print_exc()   # prints the full crash with line numbers
+            self.cache.invalidate()
             return f"Deleted record with id={value}."
 
         # מסלול איטי — DELETE WHERE other_col op val
@@ -224,12 +227,13 @@ class Executor:
         filtered = self._apply_filter(op, all_records, column, value)
         if not filtered:
             return "No matching records found."
+        self.cache.invalidate()
         return self._delete_records(filtered)
     def _delete_records(self, records):
         for r in records:
-            self.table.delete(r["id"])  
+            self.table.delete_many(r["id"])  
         return f"Deleted {len(records)} record(s)."
-    def _execute_insert(self,ast):
+    def _execute_insert(self,ast,sql):
         values =ast["values"]
         columns =ast["columns"]
         data = dict(zip(columns, values))
@@ -248,6 +252,7 @@ class Executor:
         if age < 0 or age > 4294967295:
             return "Error: 'age' is out of range (0 to 4,294,967,295)."
         id = self.table.insert(name, age)
+        self.cache.invalidate()
         return f"Inserted record with id={id}."
     def _apply_columns(self, records: list, columns: list) -> list:
         """
@@ -274,35 +279,44 @@ class Executor:
                     filtered_record[col] = f"<unknown column: {col}>"
             filtered.append(filtered_record)
         return filtered
-    def _execute_select(self, ast: dict) -> str:
+    def _execute_select(self, ast: dict, sql) -> str:
         """
         Three cases:
           1. No WHERE clause      → full table scan
           2. WHERE id = X         → fast B+ Tree lookup O(log n)
           3. WHERE other_col op X → full scan + filter in Python
         """
+                # Check cache first
+        cache_key = sql.strip().lower()
+        cached = self.cache.get(cache_key)
+        print(f"DEBUG cache lookup: {sql!r} → {'HIT' if cached is not None else 'MISS'}")
+        if cached is not None:
+            return cached
         where = ast["where"]  # either None or a tuple (column, op, value)
         columns = ast["columns"]
         # Case 1 — no WHERE, return everything
         if where is None:
             results = self.table.select_all()
-            filresults = self._apply_columns(results, columns)
-            return self._format(filresults)
+            #filresults = self._apply_columns(results, columns)
+            #return filresults
         column, op, value = where
         if column == "id" and op == "=":
             results = self.table.select_by_id(value)
             if results is None:
                 return "No record found."
-            filresults = self._apply_columns([results], columns)
-            print("the string", filresults)
-            return self._format(filresults)
-        all_records = self.table.select_all()
+            #filresults = self._apply_columns(results, columns)
+            #return filresults
+        else:
+            all_records = self.table.select_all()
+            filtered = self._apply_filter(op,all_records , column, value)
+            results = filtered
+            
         
-        filtered = self._apply_filter(op,all_records , column, value)
-        filtered_results = self._apply_columns(filtered, columns)
+
+        filtered_results = self._apply_columns(results, columns)
             # שלב 2 — סנן עמודות
-        
-        return self._format(filtered_results)
+        self.cache.set(sql, filtered_results)
+        return filtered_results
     """def _format(self, records: list) -> str:
         "
         Turn a list of record dicts into a human-readable string.
@@ -318,8 +332,8 @@ class Executor:
         lines = [str(r) for r in records]
         count = len(records)
         lines.append(f"({count} row{'s' if count != 1 else ''})")
-        return "\\n".join(lines)"""
-    def _format(self, records: list) -> str:
+        return "\n".join(lines)"""
+    def _format(self, records: list):
 
         return records
     def _apply_filter(self,op, records:list, column:str, value):

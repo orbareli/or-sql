@@ -60,83 +60,6 @@ class TerminalUI:
 
         console.print(table)
 
-class MyCLI(cmd.Cmd):
-    intro = 'Welcome to the orSQL shell. Type help or ? to list commands.\n'
-    prompt = '(Or db) >> '
-    def __init__(self, table_instance):
-        # חשוב מאוד: לקרוא ל-init של מחלקת האב (cmd.Cmd)
-        super().__init__()
-        # כאן אנחנו שומרים את המופע של ה-Table בתוך ה-CLI
-        self.db = table_instance
-        self.executor = Executor(table_instance)
-    def default(self, line: str):
-        """Catch-all — every SQL statement comes through here."""
-        result = self.executor.run(line)
-        print(result)
-    """def do_hello(self, line):
-        ""Print a greeting.""
-        print("Hello, World!")
-    def do_add(self, arg):
-        ""Usage: add <name> <age>""
-        try:
-        # arg מכיל את כל מה שכתבת אחרי המילה add (למשל "or 12")
-            parts = arg.split()
-            if len(parts) < 2:
-                print("Error: You must provide both name and age.")
-                return
-
-            name = parts[0]
-            age = int(parts[1])
-
-            # שליחה למנוע - וודא שהסדר כאן תואם להגדרה ב-Table
-            new_id = self.db.insert(name, age) 
-            print(f"--> Record added with ID: {new_id}")
-
-        except ValueError:
-            print("Error: Age must be a number.")
-    def do_SELECT(self, args):
-        ""Usage: get <id> - Uses B-Tree O(log n) search""
-        try:
-            res = self.db.select_all()
-            if res:
-
-                for row in res:
-                    print(f"FOUND: {row}")
-            else:
-                print("Not found.")
-        except ValueError:
-            print("Error: ID must be a number.")
-            
-    def do_get(self, arg):
-        ""Usage: get <id> - Uses B-Tree O(log n) search""
-        try:
-            res = self.db.select_by_id(int(arg))
-            if res:
-                print(f"FOUND: {res}")
-            else:
-                print("Not found.")
-        except ValueError:
-            print("Error: ID must be a number.")"""
-
-    def do_quit(self, line):
-        """Exit the CLI."""
-        return True
-    def do_search(self,line):
-        print("hiiiii")
-    """def precmd(self, line):
-    # Add custom code here
-        print("Before command execution")
-        return line  # You must return the modified or original command line
-    def postcmd(self, stop, line):
-    # Add custom code here
-        print("After command execution")
-        return stop  # Return 'stop' to control whether the CLI continues or exits"""
-    def preloop(self):
-    # Add custom initialization here
-        print("Initialization before the CLI loop")
-    def postloop(self):
-    # Add custom cleanup or finalization here
-        print("Finalization after the CLI loop")
 class ORCLI(cmd.Cmd):
     intro = 'Welcome to the orSQL shell. Type help or ? to list commands.\n'
     prompt = '(Or db) >> '
@@ -157,10 +80,9 @@ class ORCLI(cmd.Cmd):
     def do_hello(self, line):
         """Print a greeting."""
         print("Hello, World!")
-    def default(self, line: str):
-        """Catch-all — every SQL statement comes through here."""
+    """def default(self, line: str):
         result = self.executor.run(line,ai=self.ai)
-        print(result)
+        print(result)"""
     """def do_insert(self, arg):
         "Usage: insert <name> <age>"
         try:
@@ -302,6 +224,7 @@ class ORCLI(cmd.Cmd):
                 console.print(Panel(f"[bold red]Error:[/bold red] {result}", border_style="red"))
 
         except Exception as e:
+            print(e)
             console.print(Panel(f"[bold white on red] CRITICAL ERROR [/bold white on red]\n{str(e)}", title="System"))
     def do_ai(self,line):
             # Looks like English — ask AI
@@ -332,9 +255,13 @@ class ORCLI(cmd.Cmd):
     def do_freelist(self, arg):
         """Show freelist status."""
         print(self.executor.table.freelist_report())
+    def do_cache(self, arg):
+        print(self.executor.cache.report())
+        return
     def do_report(self,arg):
         print(self.executor.table.fragmentation_report())
         return
+
 if __name__ == '__main__':
     my_table = Table(r"C:\Users\or\Desktop\or-sql\db\db_files\my_database2.db")
     #cli = MyCLI(my_table)
