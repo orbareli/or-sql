@@ -1,6 +1,7 @@
 {
   "tables": [
     {
+<<<<<<< HEAD
       "table_name": "men",
       "columns": [
         {
@@ -112,6 +113,8 @@
       ]
     },
     {
+=======
+>>>>>>> 3357ab9b6f7aa06faf5c54b8ae98b607fec00bc7
       "table_name": "coins",
       "columns": [
         {
