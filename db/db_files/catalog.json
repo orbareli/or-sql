@@ -1,0 +1,13 @@
+{
+  "tables": [
+    {
+      "table_name": "coins",
+      "columns": [
+        {
+          "name": "amount",
+          "type": "INTEGER"
+        }
+      ]
+    }
+  ]
+}
