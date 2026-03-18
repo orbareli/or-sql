@@ -1,0 +1,4 @@
+rich
+huggingface_hub
+python-dotenv
+pytest

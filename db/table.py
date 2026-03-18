@@ -1,16 +1,18 @@
+from __future__ import annotations
+
 """
 table.py
 --------
 Top-level API. Coordinates:
-  - Pager      → data pages on disk
-  - BPlusTree  → index (key → location)
-  - Freelist   → tracks deleted slots for immediate reuse
-  - VACUUM     → periodic compaction with temp file safety
+  - Pager      -> data pages on disk
+  - BPlusTree  -> index (key -> location)
+  - Freelist   -> tracks deleted slots for immediate reuse
+  - VACUUM     -> periodic compaction with temp file safety
 
 Strategy:
-  - delete()  → tombstone + add to freelist
-  - insert()  → check freelist first, reuse if available
-  - vacuum()  → write to temp file, atomic swap, rebuild index
+  - delete()  -> tombstone + add to freelist
+  - insert()  -> check freelist first, reuse if available
+  - vacuum()  -> write to temp file, atomic swap, rebuild index
 """
 import os
 import struct
@@ -18,30 +20,21 @@ import shutil
 from page import Page, PageFullError, PAGE_SIZE, HEADER_SIZE
 from pager import Pager
 from btree import BPlusTree
+from schema import Schema
 
-RECORD_FORMAT       = "<I20sI"
-RECORD_SIZE         = struct.calcsize(RECORD_FORMAT)
 FREELIST_ENTRY_FMT  = "<II"
 FREELIST_ENTRY_SIZE = struct.calcsize(FREELIST_ENTRY_FMT)
 
 
-def pack(user_id, name, age) -> bytes:
-    name_bytes = name.encode("utf-8")[:20].ljust(20, b'\x00')
-    return struct.pack(RECORD_FORMAT, user_id, name_bytes, age)
-
-
-def unpack(data: bytes) -> dict:
-    user_id, name_bytes, age = struct.unpack(RECORD_FORMAT, data)
-    return {"id": user_id, "name": name_bytes.decode("utf-8").strip('\x00'), "age": age}
-
-
 class Table:
-    def __init__(self, db_path: str):
-        self.db_path  = db_path
-        self.pager    = Pager(db_path)
-        self.tree     = BPlusTree(db_path + ".idx")
-        self.next_id  = self._load_next_id()
-        self.freelist = self._load_freelist()
+    def __init__(self, db_path: str, schema: Schema):
+        self.db_path      = db_path
+        self.schema       = schema
+        self.record_size  = schema.record_size
+        self.pager        = Pager(db_path)
+        self.tree         = BPlusTree(db_path + ".idx")
+        self.next_id      = self._load_next_id()
+        self.freelist     = self._load_freelist()
 
     # ---------------------------------------------------------------- #
     #  Paths                                                            #
@@ -102,11 +95,11 @@ class Table:
     #  Helpers                                                          #
     # ---------------------------------------------------------------- #
 
-    def _find_writable_page(self) -> tuple[int, Page]:
+    def _find_writable_page(self) -> tuple:
         """Return (page_id, Page) with room for one more record."""
         for page_id in range(self.pager.num_pages):
             page = Page(self.pager.get_page(page_id))
-            if page.free_space() >= RECORD_SIZE:
+            if page.free_space() >= self.record_size:
                 return page_id, page
         page_id = self.pager.allocate_page()
         return page_id, Page()
@@ -130,36 +123,30 @@ class Table:
     #  Public API                                                       #
     # ---------------------------------------------------------------- #
 
-    def insert(self, name: str, age: int) -> int:
+    def insert(self, values: dict) -> int:
         """
         Insert a record.
-        Checks freelist first — reuses deleted slots before appending.
+        Checks freelist first -- reuses deleted slots before appending.
         Auto-triggers vacuum if fragmentation exceeds 30%.
         """
-        user_id = self.next_id
-        record  = pack(user_id, name, age)
+        record_id = self.next_id
+        record = self.schema.pack(record_id, values)
 
         if self.freelist:
-            # -------------------------------------------------------- #
-            # Reuse a deleted slot — no new space consumed              #
-            # -------------------------------------------------------- #
             page_id, slot_id = self.freelist.pop()
             page   = Page(self.pager.get_page(page_id))
-            offset = HEADER_SIZE + slot_id * RECORD_SIZE
-            page.data[offset : offset + RECORD_SIZE] = record
+            offset = HEADER_SIZE + slot_id * self.record_size
+            page.data[offset : offset + self.record_size] = record
             self.pager.write_page(page_id, page.data)
             self._save_freelist()
 
         else:
-            # -------------------------------------------------------- #
-            # No free slots — append normally                           #
-            # -------------------------------------------------------- #
             page_id, page = self._find_writable_page()
             slot_id = page.add_record(record)
             self.pager.write_page(page_id, page.data)
 
         # Update index
-        self.tree.insert(user_id, page_id, slot_id)
+        self.tree.insert(record_id, page_id, slot_id)
 
         # Persist next_id
         self.next_id += 1
@@ -167,17 +154,17 @@ class Table:
 
         # Auto-vacuum check
         if self._should_vacuum():
-            print("  [Auto-vacuum triggered — freelist exceeded 30% threshold]")
+            print("  [Auto-vacuum triggered -- freelist exceeded 30% threshold]")
             self.vacuum()
 
-        return user_id
+        return record_id
 
-    def delete(self, user_id: int) -> bool:
+    def delete(self, record_id: int) -> bool:
         """
         Delete a record.
         Tombstones the slot and adds it to freelist for immediate reuse.
         """
-        location = self.tree.search(user_id)
+        location = self.tree.search(record_id)
         if location is None:
             return False
 
@@ -185,7 +172,7 @@ class Table:
 
         # Tombstone the slot
         page = Page(self.pager.get_page(page_id))
-        page.delete_record(slot_id, RECORD_SIZE)
+        page.delete_record(slot_id, self.record_size)
         self.pager.write_page(page_id, page.data)
 
         # Track in freelist
@@ -193,16 +180,15 @@ class Table:
         self._save_freelist()
 
         # Remove from index
-        self.tree.delete(user_id)
+        self.tree.delete(record_id)
 
         return True
 
-    def delete_many(self, ids: list[int]) -> int:
+    def delete_many(self, ids: list) -> int:
         """
-        Batch delete — more efficient than calling delete() one by one.
+        Batch delete -- more efficient than calling delete() one by one.
         Groups by page so each page is loaded and written only once.
         """
-        # Group by page
         pages_to_update = {}
         for record_id in ids:
             location = self.tree.search(record_id)
@@ -217,7 +203,7 @@ class Table:
         for page_id, entries in pages_to_update.items():
             page = Page(self.pager.get_page(page_id))
             for record_id, slot_id in entries:
-                page.delete_record(slot_id, RECORD_SIZE)
+                page.delete_record(slot_id, self.record_size)
                 self.freelist.append((page_id, slot_id))
                 self.tree.delete(record_id)
                 total += 1
@@ -228,32 +214,47 @@ class Table:
 
         return total
 
-    def select_all(self) -> list[dict]:
-        """Full scan — skips tombstoned records."""
+    def select_all(self) -> list:
+        """Full scan -- skips tombstoned records."""
         results = []
         for page_id in range(self.pager.num_pages):
             page = Page(self.pager.get_page(page_id))
             for slot_id in range(page.num_records):
-                if page.is_deleted(slot_id, RECORD_SIZE):
+                if page.is_deleted(slot_id, self.record_size):
                     continue
-                record = page.get_record(slot_id, RECORD_SIZE)
-                results.append(unpack(record))
+                record = page.get_record(slot_id, self.record_size)
+                results.append(self.schema.unpack(record))
         return results
 
-    def select_by_id(self, user_id: int) -> list | None:
+    def update(self, record_id: int, values: dict) -> bool:
+        """Update a record in-place by record_id."""
+        location = self.tree.search(record_id)
+        if location is None:
+            return False
+        page_id, slot_id = location
+        page = Page(self.pager.get_page(page_id))
+        if page.is_deleted(slot_id, self.record_size):
+            return False
+        record = self.schema.pack(record_id, values)
+        offset = HEADER_SIZE + slot_id * self.record_size
+        page.data[offset : offset + self.record_size] = record
+        self.pager.write_page(page_id, page.data)
+        return True
+
+    def select_by_id(self, record_id: int):
         """B+ Tree O(log n) point lookup."""
-        location = self.tree.search(user_id)
+        location = self.tree.search(record_id)
         if location is None:
             return None
         page_id, slot_id = location
         page = Page(self.pager.get_page(page_id))
-        if page.is_deleted(slot_id, RECORD_SIZE):
+        if page.is_deleted(slot_id, self.record_size):
             return None
-        record = page.get_record(slot_id, RECORD_SIZE)
-        return [unpack(record)]
+        record = page.get_record(slot_id, self.record_size)
+        return [self.schema.unpack(record)]
 
     # ---------------------------------------------------------------- #
-    #  VACUUM — safe compaction with temp file                          #
+    #  VACUUM -- safe compaction with temp file                         #
     # ---------------------------------------------------------------- #
 
     def vacuum(self) -> dict:
@@ -262,28 +263,18 @@ class Table:
 
         Steps:
           1. Stream live records into a temp file page by page
-             (never loads whole DB into memory)
-          2. Atomic swap — only replace original after temp is complete
-             (crash during step 1 leaves original untouched)
+          2. Atomic swap -- only replace original after temp is complete
           3. Rebuild B+ Tree from new locations
-          4. Clear freelist — all slots are now tightly packed
-
-        Safe because:
-          - If crash during step 1 → original .db untouched
-          - If crash during swap   → worst case: rename fails, original intact
+          4. Clear freelist -- all slots are now tightly packed
         """
         print("Starting VACUUM...")
 
         tmp_path = self.db_path + ".tmp"
         tmp_pager = Pager(tmp_path)
 
-        # ------------------------------------------------------------ #
-        # Step 1 — stream live records into temp file                   #
-        # One page in memory at a time — no memory bomb                 #
-        # ------------------------------------------------------------ #
         output_page    = Page()
         output_page_id = 0
-        new_locations  = {}   # user_id → (new_page_id, new_slot_id)
+        new_locations  = {}
         live_count     = 0
         freed_count    = len(self.freelist)
 
@@ -292,14 +283,13 @@ class Table:
             page = Page(raw)
 
             for slot_id in range(page.num_records):
-                if page.is_deleted(slot_id, RECORD_SIZE):
+                if page.is_deleted(slot_id, self.record_size):
                     continue
 
-                record_bytes = page.get_record(slot_id, RECORD_SIZE)
-                record       = unpack(record_bytes)
+                record_bytes = page.get_record(slot_id, self.record_size)
+                record       = self.schema.unpack(record_bytes)
 
-                # If output page is full — flush it and start a new one
-                if output_page.free_space() < RECORD_SIZE:
+                if output_page.free_space() < self.record_size:
                     tmp_pager.write_page(output_page_id, output_page.data)
                     output_page_id += 1
                     output_page     = Page()
@@ -308,7 +298,6 @@ class Table:
                 new_locations[record["id"]] = (output_page_id, new_slot)
                 live_count += 1
 
-        # Write last page if it has any records
         if output_page.num_records > 0:
             tmp_pager.write_page(output_page_id, output_page.data)
 
@@ -317,29 +306,18 @@ class Table:
         pages_before = self.pager.num_pages
         pages_after  = output_page_id + 1 if live_count > 0 else 0
 
-        # ------------------------------------------------------------ #
-        # Step 2 — atomic swap                                          #
-        # Original file untouched until this point                      #
-        # ------------------------------------------------------------ #
         self.pager.close()
         os.remove(self.db_path)
-        shutil.move(tmp_path, self.db_path)   # atomic on most OSes
+        shutil.move(tmp_path, self.db_path)
         self.pager = Pager(self.db_path)
 
-        # ------------------------------------------------------------ #
-        # Step 3 — rebuild B+ Tree from new locations                   #
-        # ------------------------------------------------------------ #
         self.tree.pager.close()
         os.remove(self._idx_path())
         self.tree = BPlusTree(self._idx_path())
 
-        for user_id, (page_id, slot_id) in sorted(new_locations.items()):
-            self.tree.insert(user_id, page_id, slot_id)
+        for uid, (page_id, slot_id) in sorted(new_locations.items()):
+            self.tree.insert(uid, page_id, slot_id)
 
-        # ------------------------------------------------------------ #
-        # Step 4 — clear freelist                                       #
-        # All slots are now tightly packed — no free slots needed       #
-        # ------------------------------------------------------------ #
         self.freelist = []
         self._save_freelist()
 
@@ -371,12 +349,12 @@ class Table:
             page = Page(raw)
             total += page.num_records
             for slot_id in range(page.num_records):
-                if page.is_deleted(slot_id, RECORD_SIZE):
+                if page.is_deleted(slot_id, self.record_size):
                     tombstones += 1
 
         live     = total - tombstones
         frag_pct = (tombstones / total * 100) if total > 0 else 0
-        records_per_page = (PAGE_SIZE - HEADER_SIZE) // RECORD_SIZE
+        records_per_page = (PAGE_SIZE - HEADER_SIZE) // self.record_size
         pages_needed     = -(-live // records_per_page) if live > 0 else 0
 
         return "\n".join([
@@ -385,7 +363,7 @@ class Table:
             f"Live records     : {live}",
             f"Tombstones       : {tombstones}",
             f"Fragmentation    : {frag_pct:.1f}%",
-            f"Wasted space     : {tombstones * RECORD_SIZE} bytes",
+            f"Wasted space     : {tombstones * self.record_size} bytes",
             f"Pages now        : {self.pager.num_pages}",
             f"Pages after vac  : {pages_needed}",
             f"Freelist slots   : {len(self.freelist)}",
@@ -395,7 +373,7 @@ class Table:
         return "\n".join([
             "--- Freelist Report ---",
             f"Available slots  : {len(self.freelist)}",
-            f"Reclaimable      : {len(self.freelist) * RECORD_SIZE} bytes",
+            f"Reclaimable      : {len(self.freelist) * self.record_size} bytes",
             f"Entries          : {self.freelist}",
         ])
 

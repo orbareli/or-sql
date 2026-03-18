@@ -5,6 +5,7 @@
 *.db
 *.idx
 *.meta
+*.free
 
 # Python cache
 __pycache__/
