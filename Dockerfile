@@ -35,4 +35,4 @@ RUN mkdir -p /data
 
 # ── Run the CLI ────────────────────────────────
 WORKDIR /app/db
-CMD ["python", "cli.py"]
+CMD ["python", "server.py"]
