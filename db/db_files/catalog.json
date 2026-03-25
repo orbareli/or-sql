@@ -1,126 +1,53 @@
 {
   "tables": [
     {
-<<<<<<< HEAD
       "table_name": "men",
       "columns": [
-        {
-          "name": "name",
-          "type": "TEXT",
-          "size": 255
-        },
-        {
-          "name": "age",
-          "type": "INTEGER"
-        }
+        {"name": "name", "type": "TEXT", "size": 255},
+        {"name": "age", "type": "INTEGER"}
       ]
     },
     {
       "table_name": "city",
       "columns": [
-        {
-          "name": "name",
-          "type": "TEXT",
-          "size": 255
-        },
-        {
-          "name": "state",
-          "type": "TEXT",
-          "size": 255
-        },
-        {
-          "name": "user_id",
-          "type": "INTEGER"
-        }
+        {"name": "name", "type": "TEXT", "size": 255},
+        {"name": "state", "type": "TEXT", "size": 255},
+        {"name": "user_id", "type": "INTEGER"}
       ]
     },
     {
       "table_name": "players",
       "columns": [
-        {
-          "name": "name",
-          "type": "TEXT",
-          "size": 50
-        },
-        {
-          "name": "club",
-          "type": "TEXT",
-          "size": 50
-        },
-        {
-          "name": "nation",
-          "type": "TEXT",
-          "size": 30
-        },
-        {
-          "name": "pos",
-          "type": "TEXT",
-          "size": 5
-        },
-        {
-          "name": "rating",
-          "type": "INTEGER"
-        },
-        {
-          "name": "pace",
-          "type": "INTEGER"
-        },
-        {
-          "name": "shoot",
-          "type": "INTEGER"
-        },
-        {
-          "name": "pass",
-          "type": "INTEGER"
-        },
-        {
-          "name": "is_icon",
-          "type": "INTEGER"
-        }
+        {"name": "name", "type": "TEXT", "size": 50},
+        {"name": "club", "type": "TEXT", "size": 50},
+        {"name": "nation", "type": "TEXT", "size": 30},
+        {"name": "pos", "type": "TEXT", "size": 5},
+        {"name": "rating", "type": "INTEGER"},
+        {"name": "pace", "type": "INTEGER"},
+        {"name": "shoot", "type": "INTEGER"},
+        {"name": "pass", "type": "INTEGER"},
+        {"name": "is_icon", "type": "INTEGER"}
       ]
     },
     {
       "table_name": "club_players",
       "columns": [
-        {
-          "name": "player_id",
-          "type": "INTEGER"
-        },
-        {
-          "name": "added_at",
-          "type": "TEXT",
-          "size": 30
-        }
+        {"name": "player_id", "type": "INTEGER"},
+        {"name": "added_at", "type": "TEXT", "size": 30}
       ]
     },
     {
       "table_name": "pack_history",
       "columns": [
-        {
-          "name": "pack_type",
-          "type": "TEXT",
-          "size": 20
-        },
-        {
-          "name": "coins_spent",
-          "type": "INTEGER"
-        },
-        {
-          "name": "opened_at",
-          "type": "TEXT",
-          "size": 30
-        }
+        {"name": "pack_type", "type": "TEXT", "size": 20},
+        {"name": "coins_spent", "type": "INTEGER"},
+        {"name": "opened_at", "type": "TEXT", "size": 30}
       ]
     },
     {
-=======
->>>>>>> 3357ab9b6f7aa06faf5c54b8ae98b607fec00bc7
       "table_name": "coins",
       "columns": [
-        {
-          "name": "amount",
-          "type": "INTEGER"
-        }
+        {"name": "amount", "type": "INTEGER"}
       ]
     }
   ]
